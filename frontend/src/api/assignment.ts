@@ -9,10 +9,20 @@ export const assignmentApi = {
     api.post<AssignmentSubmission>(`/assignments/${assignmentId}/submit`, data).then(res => res.data),
   getMySubmission: (assignmentId: string) =>
     api.get<AssignmentSubmission | null>(`/assignments/${assignmentId}/my-submission`).then(res => res.data),
+  getMySubmissionHistory: (assignmentId: string) =>
+    api.get<AssignmentSubmission[]>(`/assignments/${assignmentId}/my-submission/history`).then(res => res.data),
   getSubmissions: (assignmentId: string) =>
     api.get<AssignmentSubmission[]>(`/assignments/${assignmentId}/submissions`).then(res => res.data),
+  getSubmissionVersions: (assignmentId: string, studentId: string) =>
+    api
+      .get<AssignmentSubmission[]>(`/assignments/${assignmentId}/submissions/versions?studentId=${studentId}`)
+      .then(res => res.data),
   grade: (submissionId: string, score: number, feedback: string) =>
     api.post<AssignmentSubmission>(`/assignments/submissions/${submissionId}/grade`, { score, feedback }).then(res => res.data),
+  returnForRevision: (submissionId: string, revisionRequirement: string) =>
+    api
+      .post<AssignmentSubmission>(`/assignments/submissions/${submissionId}/return`, { revisionRequirement })
+      .then(res => res.data),
 };
 
 export const statisticsApi = {

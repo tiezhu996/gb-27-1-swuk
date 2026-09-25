@@ -95,17 +95,25 @@ CREATE TABLE IF NOT EXISTS assignment_submissions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   assignment_id UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
   student_id UUID NOT NULL REFERENCES users(id),
+  attempt INT NOT NULL DEFAULT 1,
   text_answer TEXT,
   choice_answers JSON,
   attachment_urls TEXT[],
   status VARCHAR(20) NOT NULL DEFAULT 'submitted',
   score INT,
   feedback TEXT,
+  revision_requirement TEXT,
+  parent_submission_id UUID REFERENCES assignment_submissions(id),
+  returned_at TIMESTAMP,
   graded_at TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(assignment_id, student_id)
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 订正留档：同一份作业同一名学生可保留多个版本（原答案 + 历次订正），
+-- 不再使用 (assignment_id, student_id) 唯一约束，改由 (作业, 学生, 版本号) 唯一。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_submissions_assignment_student_attempt
+  ON assignment_submissions(assignment_id, student_id, attempt);
 
 CREATE TABLE IF NOT EXISTS attendance_records (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
