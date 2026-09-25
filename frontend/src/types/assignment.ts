@@ -7,6 +7,7 @@ export enum AssignmentType {
 export enum SubmissionStatus {
   SUBMITTED = 'submitted',
   GRADED = 'graded',
+  RETURNED = 'returned',
 }
 
 export interface Assignment {
@@ -35,6 +36,23 @@ export interface AssignmentSubmission {
   score?: number;
   feedback?: string;
   gradedAt?: Date;
+  revisionRequirements?: string;
+  returnedAt?: Date;
+  revisionCount: number;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SubmissionRevision {
+  id: string;
+  submissionId: string;
+  textAnswer?: string;
+  choiceAnswers?: any;
+  attachmentUrls?: string[];
+  score?: number;
+  feedback?: string;
+  gradedAt?: Date;
+  revisionRequirements?: string;
+  returnedAt?: Date;
+  archivedAt: Date;
 }

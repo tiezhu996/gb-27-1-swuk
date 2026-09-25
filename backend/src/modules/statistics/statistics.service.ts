@@ -22,6 +22,21 @@ export class StatisticsService {
     private readonly attendanceRepository: Repository<AttendanceRecord>,
   ) {}
 
+  // 同一学生的同一份作业只取最新一次已评成绩，避免订正前后多份成绩重复计入平均
+  private latestGradedByAssignment(submissions: AssignmentSubmission[]) {
+    const latest = new Map<string, AssignmentSubmission>();
+    for (const submission of submissions) {
+      const key = `${submission.studentId}:${submission.assignmentId}`;
+      const prev = latest.get(key);
+      const gradedAt = submission.gradedAt ? new Date(submission.gradedAt).getTime() : 0;
+      const prevGradedAt = prev && prev.gradedAt ? new Date(prev.gradedAt).getTime() : 0;
+      if (!prev || gradedAt >= prevGradedAt) {
+        latest.set(key, submission);
+      }
+    }
+    return Array.from(latest.values());
+  }
+
   async getTeacherStats(teacherId: string) {
     const courses = await this.courseRepository.find({
       where: { teacherId },
@@ -51,9 +66,10 @@ export class StatisticsService {
     const submissions = await this.submissionRepository.find({
       where: { status: SubmissionStatus.GRADED },
     });
-    
-    const avgScore = submissions.length > 0 
-      ? submissions.reduce((sum, s) => sum + (s.score || 0), 0) / submissions.length 
+
+    const latestSubmissions = this.latestGradedByAssignment(submissions);
+    const avgScore = latestSubmissions.length > 0
+      ? latestSubmissions.reduce((sum, s) => sum + (s.score || 0), 0) / latestSubmissions.length
       : 0;
     
     return {
@@ -81,6 +97,8 @@ export class StatisticsService {
     const submissions = await this.submissionRepository.find({
       where: { studentId, status: SubmissionStatus.GRADED },
     });
+
+    const latestSubmissions = this.latestGradedByAssignment(submissions);
     
     const attendanceRecords = await this.attendanceRepository.find({
       where: { studentId },
@@ -90,18 +108,18 @@ export class StatisticsService {
       return sum + (e.progress || 0);
     }, 0);
     
-    const avgScore = submissions.length > 0
-      ? submissions.reduce((sum, s) => sum + (s.score || 0), 0) / submissions.length
+    const avgScore = latestSubmissions.length > 0
+      ? latestSubmissions.reduce((sum, s) => sum + (s.score || 0), 0) / latestSubmissions.length
       : 0;
-    
+
     const completedCourses = enrollments.filter(e => e.status === EnrollmentStatus.COMPLETED).length;
-    
+
     return {
       totalCourses: enrollments.length,
       completedCourses,
       totalStudyHours: Math.round(totalStudyHours / 60),
       totalAssignments: assignments.length,
-      completedAssignments: submissions.length,
+      completedAssignments: latestSubmissions.length,
       averageScore: Math.round(avgScore),
       attendanceRecords: attendanceRecords.length,
     };

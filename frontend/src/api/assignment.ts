@@ -1,5 +1,5 @@
 import { api } from './index';
-import { Assignment, AssignmentSubmission } from '@/types/assignment';
+import { Assignment, AssignmentSubmission, SubmissionRevision } from '@/types/assignment';
 
 export const assignmentApi = {
   list: (courseId: string) => api.get<Assignment[]>(`/assignments?courseId=${courseId}`).then(res => res.data),
@@ -13,6 +13,10 @@ export const assignmentApi = {
     api.get<AssignmentSubmission[]>(`/assignments/${assignmentId}/submissions`).then(res => res.data),
   grade: (submissionId: string, score: number, feedback: string) =>
     api.post<AssignmentSubmission>(`/assignments/submissions/${submissionId}/grade`, { score, feedback }).then(res => res.data),
+  returnForRevision: (submissionId: string, revisionRequirements: string) =>
+    api.post<AssignmentSubmission>(`/assignments/submissions/${submissionId}/return`, { revisionRequirements }).then(res => res.data),
+  getRevisions: (submissionId: string) =>
+    api.get<SubmissionRevision[]>(`/assignments/submissions/${submissionId}/revisions`).then(res => res.data),
 };
 
 export const statisticsApi = {

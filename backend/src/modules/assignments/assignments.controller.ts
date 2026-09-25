@@ -49,4 +49,20 @@ export class AssignmentsController {
   ) {
     return this.assignmentsService.grade(req.user.id, submissionId, body.score, body.feedback);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('submissions/:submissionId/return')
+  returnForRevision(
+    @Param('submissionId') submissionId: string,
+    @Body() body: { revisionRequirements: string },
+    @Request() req,
+  ) {
+    return this.assignmentsService.returnForRevision(req.user.id, submissionId, body.revisionRequirements);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('submissions/:submissionId/revisions')
+  findRevisions(@Param('submissionId') submissionId: string, @Request() req) {
+    return this.assignmentsService.findRevisions(req.user.id, submissionId);
+  }
 }

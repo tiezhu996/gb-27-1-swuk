@@ -5,6 +5,7 @@ import { User } from './user.entity';
 export enum SubmissionStatus {
   SUBMITTED = 'submitted',
   GRADED = 'graded',
+  RETURNED = 'returned',
 }
 
 @Entity('assignment_submissions')
@@ -38,6 +39,15 @@ export class AssignmentSubmission {
 
   @Column({ type: 'timestamp', nullable: true })
   gradedAt: Date;
+
+  @Column({ type: 'text', nullable: true })
+  revisionRequirements: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  returnedAt: Date;
+
+  @Column({ type: 'int', default: 0 })
+  revisionCount: number;
 
   @ManyToOne(() => Assignment)
   @JoinColumn({ name: 'assignmentId' })

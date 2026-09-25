@@ -1,13 +1,13 @@
-import { Card, Typography, Form, Input, Button, Space, Descriptions, Tag, InputNumber, message, List, Avatar, Modal, Row, Col } from 'antd';
-import { ArrowLeftOutlined, EditOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Card, Typography, Form, Input, Button, Space, Descriptions, Tag, Alert, message, List, Avatar, Modal, Row, Col } from 'antd';
+import { ArrowLeftOutlined, EditOutlined, RollbackOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { assignmentApi } from '@/api/assignment';
-import { Assignment, AssignmentType, SubmissionStatus, AssignmentSubmission } from '@/types/assignment';
+import { Assignment, AssignmentType, SubmissionStatus, AssignmentSubmission, SubmissionRevision } from '@/types/assignment';
 import { useAuthStore } from '@/store/auth';
 import { UserRole } from '@/types/user';
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 export default function AssignmentPage() {
   const { id } = useParams();
@@ -15,7 +15,12 @@ export default function AssignmentPage() {
   const [assignment, setAssignment] = useState<Assignment | null>(null);
   const [submission, setSubmission] = useState<AssignmentSubmission | null>(null);
   const [submissions, setSubmissions] = useState<AssignmentSubmission[]>([]);
+  const [revisions, setRevisions] = useState<SubmissionRevision[]>([]);
   const [loading, setLoading] = useState(true);
+  const [returnTarget, setReturnTarget] = useState<AssignmentSubmission | null>(null);
+  const [returnRequirements, setReturnRequirements] = useState('');
+  const [returning, setReturning] = useState(false);
+  const [history, setHistory] = useState<{ submission: AssignmentSubmission; revisions: SubmissionRevision[] } | null>(null);
   const [form] = Form.useForm();
   const { user } = useAuthStore();
 
@@ -42,8 +47,12 @@ export default function AssignmentPage() {
         setSubmission(mySub);
         if (mySub) {
           form.setFieldsValue({
-            textAnswer: mySub.textAnswer,
+            textAnswer: mySub.status === SubmissionStatus.RETURNED ? '' : mySub.textAnswer,
           });
+          const revs = await assignmentApi.getRevisions(mySub.id);
+          setRevisions(revs);
+        } else {
+          setRevisions([]);
         }
       }
     } finally {
@@ -58,7 +67,8 @@ export default function AssignmentPage() {
         textAnswer: values.textAnswer,
       });
       setSubmission(result);
-      message.success('提交成功');
+      message.success(result.revisionCount > 0 ? '订正已提交，等待老师批改' : '提交成功');
+      loadAssignment();
     } catch (error: any) {
       message.error(error.response?.data?.message || '提交失败');
     }
@@ -82,10 +92,39 @@ export default function AssignmentPage() {
           message.success('批改完成');
           loadAssignment();
         } catch (error: any) {
-          message.error('批改失败');
+          message.error(error.response?.data?.message || '批改失败');
         }
       },
     });
+  };
+
+  const handleReturn = async () => {
+    if (!returnTarget) return;
+    if (!returnRequirements.trim()) {
+      message.error('请填写订正要求');
+      return;
+    }
+    setReturning(true);
+    try {
+      await assignmentApi.returnForRevision(returnTarget.id, returnRequirements.trim());
+      message.success('已退回，等待学生订正');
+      setReturnTarget(null);
+      setReturnRequirements('');
+      loadAssignment();
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '退回失败');
+    } finally {
+      setReturning(false);
+    }
+  };
+
+  const showHistory = async (sub: AssignmentSubmission) => {
+    try {
+      const revs = await assignmentApi.getRevisions(sub.id);
+      setHistory({ submission: sub, revisions: revs });
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '加载订正记录失败');
+    }
   };
 
   const getTypeText = (type: AssignmentType) => {
@@ -105,6 +144,8 @@ export default function AssignmentPage() {
         return <Tag color="blue">待批改</Tag>;
       case SubmissionStatus.GRADED:
         return <Tag color="green">已批改</Tag>;
+      case SubmissionStatus.RETURNED:
+        return <Tag color="orange">已退回待订正</Tag>;
     }
   };
 
@@ -149,6 +190,15 @@ export default function AssignmentPage() {
           {!isTeacher && (
             <Card title="我的答案" style={{ marginTop: 24 }}>
               {submission && getStatusTag(submission.status)}
+              {submission?.status === SubmissionStatus.RETURNED && (
+                <Alert
+                  style={{ marginTop: 16 }}
+                  type="warning"
+                  showIcon
+                  message="老师已退回，请按订正要求修改后重新提交"
+                  description={submission.revisionRequirements}
+                />
+              )}
               {submission?.status === SubmissionStatus.GRADED && (
                 <div style={{ marginTop: 16, padding: 16, background: '#f5f5f5', borderRadius: 8 }}>
                   <Paragraph strong>得分：{submission.score} / {assignment.maxScore}</Paragraph>
@@ -156,25 +206,47 @@ export default function AssignmentPage() {
                   <Paragraph>{submission.feedback}</Paragraph>
                 </div>
               )}
-              <Form
-                form={form}
-                layout="vertical"
-                onFinish={handleSubmit}
-                style={{ marginTop: 16 }}
-              >
-                {assignment.type === AssignmentType.TEXT && (
-                  <Form.Item name="textAnswer" label="答案" rules={[{ required: true, message: '请输入答案' }]}>
-                    <Input.TextArea rows={8} placeholder="请输入你的答案" />
+              {revisions.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Paragraph strong><HistoryOutlined /> 历史留档（原答案与原分数）：</Paragraph>
+                  {revisions.map((rev, index) => (
+                    <div key={rev.id} style={{ marginBottom: 12, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+                      <Paragraph strong>第 {revisions.length - index} 次提交</Paragraph>
+                      <Paragraph>原答案：{rev.textAnswer || '无文本答案'}</Paragraph>
+                      <Paragraph>原得分：{rev.score ?? '-'} / {assignment.maxScore}</Paragraph>
+                      {rev.feedback && <Paragraph>教师反馈：{rev.feedback}</Paragraph>}
+                      <Text type="secondary">
+                        批改时间：{rev.gradedAt ? new Date(rev.gradedAt).toLocaleString() : '-'}
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {submission?.status !== SubmissionStatus.GRADED && (
+                <Form
+                  form={form}
+                  layout="vertical"
+                  onFinish={handleSubmit}
+                  style={{ marginTop: 16 }}
+                >
+                  {assignment.type === AssignmentType.TEXT && (
+                    <Form.Item name="textAnswer" label="答案" rules={[{ required: true, message: '请输入答案' }]}>
+                      <Input.TextArea rows={8} placeholder="请输入你的答案" />
+                    </Form.Item>
+                  )}
+                  <Form.Item>
+                    <Space>
+                      <Button type="primary" htmlType="submit" size="large">
+                        {submission?.status === SubmissionStatus.RETURNED
+                          ? '提交订正'
+                          : submission
+                            ? '重新提交'
+                            : '提交作业'}
+                      </Button>
+                    </Space>
                   </Form.Item>
-                )}
-                <Form.Item>
-                  <Space>
-                    <Button type="primary" htmlType="submit" size="large">
-                      {submission ? '重新提交' : '提交作业'}
-                    </Button>
-                  </Space>
-                </Form.Item>
-              </Form>
+                </Form>
+              )}
             </Card>
           )}
 
@@ -191,6 +263,16 @@ export default function AssignmentPage() {
                           批改
                         </Button>
                       ),
+                      sub.status === SubmissionStatus.GRADED && (
+                        <Button danger icon={<RollbackOutlined />} onClick={() => { setReturnTarget(sub); setReturnRequirements(''); }}>
+                          退回订正
+                        </Button>
+                      ),
+                      (sub.revisionCount > 0 || sub.status === SubmissionStatus.RETURNED) && (
+                        <Button type="link" icon={<HistoryOutlined />} onClick={() => showHistory(sub)}>
+                          订正记录
+                        </Button>
+                      ),
                     ]}
                   >
                     <List.Item.Meta
@@ -199,12 +281,16 @@ export default function AssignmentPage() {
                         <Space>
                           {sub.studentId || '未知用户'}
                           {getStatusTag(sub.status)}
+                          {sub.revisionCount > 0 && <Tag>已订正 {sub.revisionCount} 次</Tag>}
                         </Space>
                       }
                       description={
                         <Space>
                           <span>提交时间：{new Date(sub.createdAt).toLocaleString()}</span>
                           {sub.score !== null && <span>得分：{sub.score}</span>}
+                          {sub.status === SubmissionStatus.RETURNED && sub.returnedAt && (
+                            <span>退回时间：{new Date(sub.returnedAt).toLocaleString()}</span>
+                          )}
                         </Space>
                       }
                     />
@@ -215,6 +301,46 @@ export default function AssignmentPage() {
           )}
         </Col>
       </Row>
+
+      <Modal
+        title="退回订正"
+        open={!!returnTarget}
+        onOk={handleReturn}
+        onCancel={() => setReturnTarget(null)}
+        okText="退回"
+        confirmLoading={returning}
+      >
+        <Paragraph strong>学生答案：</Paragraph>
+        <Paragraph>{returnTarget?.textAnswer || '无文本答案'}</Paragraph>
+        <Paragraph strong>订正要求（必填，学生将按此要求重新提交）：</Paragraph>
+        <Input.TextArea
+          rows={4}
+          value={returnRequirements}
+          onChange={(e) => setReturnRequirements(e.target.value)}
+          placeholder="请填写订正要求，例如：第 2 题论证不充分，请补充说明"
+        />
+      </Modal>
+
+      <Modal
+        title="订正记录（历史留档）"
+        open={!!history}
+        footer={null}
+        onCancel={() => setHistory(null)}
+      >
+        {history && history.revisions.length === 0 && <Paragraph>暂无历史版本</Paragraph>}
+        {history?.revisions.map((rev, index) => (
+          <div key={rev.id} style={{ marginBottom: 12, padding: 12, background: '#fafafa', borderRadius: 8 }}>
+            <Paragraph strong>第 {history.revisions.length - index} 次提交（已留档）</Paragraph>
+            <Paragraph>原答案：{rev.textAnswer || '无文本答案'}</Paragraph>
+            <Paragraph>原得分：{rev.score ?? '-'}</Paragraph>
+            {rev.feedback && <Paragraph>教师反馈：{rev.feedback}</Paragraph>}
+            {rev.revisionRequirements && <Paragraph>订正要求：{rev.revisionRequirements}</Paragraph>}
+            <Text type="secondary">
+              批改时间：{rev.gradedAt ? new Date(rev.gradedAt).toLocaleString() : '-'}
+            </Text>
+          </div>
+        ))}
+      </Modal>
     </div>
   );
 }
